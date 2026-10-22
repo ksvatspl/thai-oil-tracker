@@ -1,0 +1,50 @@
+name: Update prices and deploy
+
+on:
+  schedule:
+    - cron: "20 */3 * * *"   # ทุก 3 ชั่วโมง (เวลา UTC) ปรับได้
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "ดึงย้อนหลังทุกปี (ใช้ตอนรันครั้งแรก)"
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  update-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install beautifulsoup4
+      - name: Fetch prices
+        run: python scripts/update_prices.py ${{ inputs.full && '--full' || '' }}
+        continue-on-error: true   # ถ้าแหล่งข้อมูลล่ม ใช้ข้อมูลเดิมต่อ ไม่ให้เว็บพัง
+      - name: Commit data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/prices.json
+          git diff --cached --quiet || (git commit -m "chore: update prices" && git push)
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v4
